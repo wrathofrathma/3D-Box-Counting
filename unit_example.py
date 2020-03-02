@@ -148,6 +148,7 @@ for r in box_rays:
             isec = geometric_tests.ray_intersect_plane(r, planes[i])
             if isec is not None:
                 # Need to check the bounds
+                print("Isec")
                 print(isec)
                 ys = [y[1] for y in cube2_faces[i]]
                 xs = [x[0] for x in cube2_faces[i]]
@@ -173,6 +174,7 @@ for r in box_rays:
 print("Number of intersections found on c1: " + str(len(ray_intersects1)))
 for r in ray_intersects1:
     print(r)
+print("v intersects")
 print(v_intersect1)
 print("Number of intersections found on c2: " + str(len(ray_intersects2)))
 for r in ray_intersects2:

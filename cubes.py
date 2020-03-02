@@ -229,5 +229,5 @@ if __name__ == "__main__":
     print("xz intersections: " + str(cubes.intersect_xz(p)))
     # print(cubes.cubes)
     # (grid, faces) = cubes.generate_grid()
-    # cubes.draw([box_face])
+    cubes.draw([box_face])
     # print(faces)
