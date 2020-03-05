@@ -2,6 +2,10 @@ import numpy as np
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection
 from pyrr import line, ray, geometric_tests, plane
+from mesh import MeshObject
+from math import radians
+from multiprocessing import Process, Lock
+import math
 
 
 class Cubes:
@@ -50,8 +54,6 @@ class Cubes:
     def check_bounds(self, verts, isec):
         min_v = verts[0]
         max_v = verts[1]
-        # print(min_v)
-        # print(max_v)
         isec = np.array(isec)
         x = (isec[0] >= min_v[0]) & (isec[0] <= max_v[0])
         y = (isec[1] >= min_v[1]) & (isec[1] <= max_v[1])
@@ -60,46 +62,40 @@ class Cubes:
 
     def check_intersection_xy(self, isec, xy, verts):
         if isec is not None:
+            x = xy[0]
+            y = xy[1]
             for z in range(self.n):
-                if (
-                    self.cubes[xy[0]][xy[1]][z] == 0
-                    and isec[2] >= z
-                    and isec[2] <= z + 1
-                ):
+                if self.cubes[x][y][z] == 0 and isec[2] >= z and isec[2] <= z + 1:
                     if self.check_bounds(verts, isec):
-                        self.cubes[xy[0]][xy[1]][z] = 1
+                        self.cubes[x][y][z] = 1
                         return 1
         return 0
 
     def check_intersection_xz(self, isec, xz, verts):
         if isec is not None:
+            x = xz[0]
+            z = xz[1]
             for y in range(self.n):
-                if (
-                    self.cubes[xz[0]][y][xz[1]] == 0
-                    and isec[1] >= y
-                    and isec[1] <= y + 1
-                ):
+                if self.cubes[x][y][z] == 0 and isec[1] >= y and isec[1] <= y + 1:
                     if self.check_bounds(verts, isec):
-                        self.cubes[xz[0]][y][xz[1]] = 1
+                        self.cubes[x][y][z] = 1
                         return 1
         return 0
 
     def check_intersection_yz(self, isec, yz, verts):
         if isec is not None:
+            y = yz[0]
+            z = yz[1]
             for x in range(self.n):
-                if (
-                    self.cubes[x][yz[0]][yz[1]] == 0
-                    and isec[0] >= x
-                    and isec[0] <= x + 1
-                ):
+                if self.cubes[x][y][z] == 0 and isec[0] >= x and isec[0] <= x + 1:
                     if self.check_bounds(verts, isec):
-                        self.cubes[x][yz[0]][yz[1]] = 1
+                        self.cubes[x][y][z] = 1
                         return 1
         return 0
 
     def intersect_xz(self, verts):
         """This method checks for intersections with the xz vectors. It marks the cubes as intersected and returns the number of intersections."""
-        p = plane.create_from_points(vs[0], box_verts[1], box_verts[2])
+        p = plane.create_from_points(verts[0], verts[1], verts[2])
         max_verts = (np.max(verts[:, 0]), np.max(verts[:, 1]), np.max(verts[:, 2]))
         min_verts = (np.min(verts[:, 0]), np.min(verts[:, 1]), np.min(verts[:, 2]))
         inters = 0
@@ -130,7 +126,7 @@ class Cubes:
 
     def intersect_xy(self, verts):
         """This method checks for intersections with the xz vectors. It marks the cubes as intersected and returns the number of intersections."""
-        p = plane.create_from_points(vs[0], box_verts[1], box_verts[2])
+        p = plane.create_from_points(verts[0], verts[1], verts[2])
         max_verts = (np.max(verts[:, 0]), np.max(verts[:, 1]), np.max(verts[:, 2]))
         min_verts = (np.min(verts[:, 0]), np.min(verts[:, 1]), np.min(verts[:, 2]))
         # For each cube on the xz face, if there exists a cube not intersected
@@ -161,7 +157,7 @@ class Cubes:
 
     def intersect_yz(self, verts):
         """This method checks for intersections with the yz vectors. It marks the cubes as intersected and returns the number of intersections."""
-        p = plane.create_from_points(vs[0], box_verts[1], box_verts[2])
+        p = plane.create_from_points(verts[0], verts[1], verts[2])
         max_verts = (np.max(verts[:, 0]), np.max(verts[:, 1]), np.max(verts[:, 2]))
         min_verts = (np.min(verts[:, 0]), np.min(verts[:, 1]), np.min(verts[:, 2]))
         inters = 0
@@ -172,7 +168,7 @@ class Cubes:
                     br = geometric_tests.ray_intersect_plane(self.yz_rays[y + 1][z], p)
                     tl = geometric_tests.ray_intersect_plane(self.yz_rays[y][z + 1], p)
                     tr = geometric_tests.ray_intersect_plane(
-                        self.xy_rays[y + 1][z + 1], p
+                        self.yz_rays[y + 1][z + 1], p
                     )
                     inters += self.check_intersection_yz(
                         bl, (y, z), (min_verts, max_verts)
@@ -227,28 +223,52 @@ class Cubes:
 
         return (cube_verts, cube_faces, colors)
 
-    def draw(self, mesh):
+    def draw(self, mesh_verts, mesh_faces):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
         r = [-self.n, self.n]
         X, Y = np.meshgrid(r, r)
         (grid, faces, colors) = self.generate_grid()
         for f, c in zip(faces, colors):
-            ax.add_collection3d(
-                Poly3DCollection(
-                    f, facecolors=c, linewidth=1, edgecolors="r", alpha=0.25
+            if c == "r":
+                alpha = 0.25
+                ax.add_collection3d(
+                    Poly3DCollection(
+                        f, facecolors=c, linewidth=1, edgecolors="r", alpha=alpha
+                    )
                 )
+        for face in mesh_faces:
+            f = (
+                np.array(
+                    [mesh_verts[face[0]], mesh_verts[face[1]], mesh_verts[face[2]]]
+                ),
             )
-        for f in mesh:
             ax.add_collection3d(
                 Poly3DCollection(
-                    f, facecolors="cyan", linewidth=1, edgecolors="r", alpha=0.25
+                    verts=f,
+                    zsort="average",
+                    facecolors="cyan",
+                    linewidth=0.5,
+                    edgecolors="r",
+                    alpha=0.1,
                 )
             )
 
+        ax.set_xlim3d(0, n + 1)
+        ax.set_ylim3d(0, n + 1)
+        ax.set_zlim3d(0, n + 1)
         plt.xlabel("x")
         plt.ylabel("y")
         plt.show()
+
+    def intersect_mesh(self, mesh):
+        verts = mesh.get_vertices()
+        faces = mesh.get_faces()
+        icount = 0
+        for face in faces:
+            v = np.array([verts[face[0]], verts[face[1]], verts[face[2]]])
+            icount += self.intersect_face(v)
+        return icount
 
     def intersect_face(self, verts):
         icount = 0
@@ -257,53 +277,54 @@ class Cubes:
         icount += self.intersect_yz(verts)
         return icount
 
-    def scale_mesh_to_grid(self, mesh):
-        nmesh = []
-        for v in mesh:
-            nmesh += [v * self.n]
-        return np.array(nmesh)
+    def get_grid_scale(self):
+        return float(self.n)
 
     def center_mesh(self, mesh):
-        nmesh = []
-        xmax = np.max(mesh[:, 0])
-        ymax = np.max(mesh[:, 1])
-        zmax = np.max(mesh[:, 2])
-        xmin = np.min(mesh[:, 0])
-        ymin = np.min(mesh[:, 1])
-        zmin = np.min(mesh[:, 2])
+        verts = mesh.get_vertices()
+        xmax = np.max(verts[:, 0])
+        ymax = np.max(verts[:, 1])
+        zmax = np.max(verts[:, 2])
+        xmin = np.min(verts[:, 0])
+        ymin = np.min(verts[:, 1])
+        zmin = np.min(verts[:, 2])
         xdiff = abs(xmax - xmin)
         ydiff = abs(ymax - ymin)
         zdiff = abs(zmax - zmin)
-        scale = 1.0 / max(xdiff, ydiff, zdiff)
-        xmid = (xmax + xmin) / 2.0
-        ymid = (ymax + ymin) / 2.0
-        zmid = (zmax + zmin) / 2.0
+        scale = max(xdiff, ydiff, zdiff)
+        scale = self.n / scale
+        scale = np.array([scale, scale, scale])
+        mesh.set_scale(scale)
+        center = (self.n / 2.0, self.n / 2.0, self.n / 2.0)
+        mesh.set_position(center)
 
 
 if __name__ == "__main__":
+    v = 0.3
     box_verts = np.array(
         [
-            np.array([1.5, 2.3, 2.5]),  # top right
-            np.array([1.5, 2.3, 1.5]),  # bottom right
-            np.array([2.5, 1.3, 1.5]),  # bottom left
-            np.array([2.5, 1.3, 2.5]),  # top left
+            np.array([-v, -v, 0.0]),
+            np.array([v, -v, 0.0]),
+            np.array([v, v, 0.0]),
+            np.array([-v, v, 0.0]),
         ]
     )
     bv = box_verts
-    be = [
-        [bv[0], bv[1]],  # Right
-        [bv[1], bv[2]],  # bottom
-        [bv[2], bv[3]],  # left
-        [bv[3], bv[0]],  # top
-    ]
-    box_edges = be
-    # print(p)
-    cubes = Cubes(1)
-    cubes.center_mesh(bv)
-    # print(bv)
-    # bv = cubes.scale_mesh_to_grid(bv)
-    # print(bv)
-    vs = bv[:3]
-    # print(cubes.intersect_face(vs))
-    box_face = [[bv[0], bv[1], bv[2], bv[3]]]
-    # cubes.draw([box_face])
+    np.seterr(all="raise")
+    box_faces = np.array([[0, 1, 2], [2, 3, 0]])
+    bf = box_faces
+    m = MeshObject(vertexes=bv, indices=bf)
+    m.set_rotation((0, -np.radians(45), np.radians(45)))
+    n = 100
+    cubes = Cubes(n)
+    cubes.center_mesh(m)
+    mesh_verts = m.get_vertices()
+    mesh_faces = m.get_faces()
+    c = cubes.intersect_mesh(m)
+    print("N-cubes: " + str(n ** 3))
+    print("Print number of intersections: " + str(c))
+    sl = 1.0 / n
+    print("Side length: " + str(sl))
+    dim = math.log(c) / math.log(1 / sl)
+    print("Fractal dimension: " + str(dim))
+    # cubes.draw(mesh_verts, mesh_faces)
