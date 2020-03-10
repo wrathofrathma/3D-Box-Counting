@@ -39,46 +39,46 @@ class Cubes:
                 )
             ]
         queue.put((x, rays))
+        queue.close()
+    def process_queue(self, queue, rays):
+        while(not queue.empty()):
+            val = queue.get()
+            rays[val[0]] += val[1]
 
     def generate_xy_rays(self):
-        # print("Generating xy")
-        # n+1 because 2 boxes |_|_| would have 3 xy rays on each level.
-        q = Queue()
+        print("Generating xy")
+        queue = Queue()
         processes = []
         for x in range(self.n + 1):
             self.xy_rays += [[]]
             if(self.available_threads.value >= 1):
                 processes.append(
-                    Process(target=self.sub_generate_xy_rays, args=(x, q))
+                    Process(target=self.sub_generate_xy_rays, args=(x, queue))
                     )
                 processes[-1].start()
                 self.available_threads.value -= 1
             else:
-                # print("Joining xy")
                 while True:
+                    self.process_queue(queue, self.xy_rays)
                     if (processes[0].is_alive() is not True):
                         processes[0].join(timeout=1)
                         break
                 processes.pop(0)
                 self.available_threads.value += 1
-                val = q.get()
-                self.xy_rays[val[0]] += val[1]
                 processes.append(
-                    Process(target=self.sub_generate_xy_rays, args=(x, q))
+                    Process(target=self.sub_generate_xy_rays, args=(x, queue))
                     )
                 processes[-1].start()
                 self.available_threads.value -= 1
 
         for p in processes:
-            # print("joining xy 2")
             while True:
+                self.process_queue(queue, self.xy_rays)
                 if (p.is_alive() is not True):
                     p.join(timeout=1)
                     break
             self.available_threads.value += 1
-            val = q.get()
-            self.xy_rays[val[0]] += val[1]
-        # print("")
+        self.process_queue(queue, self.xy_rays)
           
     def sub_generate_xz_rays(self, x, queue):
         rays = []
@@ -89,44 +89,42 @@ class Cubes:
                 )
             ]
         queue.put((x, rays))
+        queue.close()
 
     def generate_xz_rays(self):
-        # print("Generating xz")
-        q = Queue()
+        print("Generating xz")
+        queue = Queue()
         processes = []
         for x in range(self.n + 1):
             self.xz_rays += [[]]
             if(self.available_threads.value >= 1):
                 processes.append(
-                    Process(target=self.sub_generate_xz_rays, args=(x, q))
+                    Process(target=self.sub_generate_xz_rays, args=(x, queue))
                     )
                 processes[-1].start()
                 self.available_threads.value -= 1
             else:
-                # print("joining xz")
                 while True:
+                    self.process_queue(queue, self.xz_rays)
                     if (processes[0].is_alive() is not True):
                         processes[0].join(timeout=1)
                         break
                 processes.pop(0)
                 self.available_threads.value += 1
-                val = q.get()
-                self.xz_rays[val[0]] += val[1]
                 processes.append(
-                    Process(target=self.sub_generate_xz_rays, args=(x, q))
+                    Process(target=self.sub_generate_xz_rays, args=(x, queue))
                     )
                 processes[-1].start()
                 self.available_threads.value -= 1
         for p in processes:
             # print("joining xz2")
             while True:
+                self.process_queue(queue, self.xz_rays)
                 if (p.is_alive() is not True):
                     p.join(timeout=1)
                     break
             self.available_threads.value += 1
-            val = q.get()
-            self.xz_rays[val[0]] += val[1]
-        # print("")
+        self.process_queue(queue, self.xz_rays)
 
     def sub_generate_yz_rays(self, y, queue):
         rays = []
@@ -137,31 +135,31 @@ class Cubes:
                 )
             ]
         queue.put((y, rays))
+        queue.close()
 
     def generate_yz_rays(self):
-        # print("Generating yz")
-        q = Queue()
+        print("Generating yz")
+        queue = Queue()
         processes = []
         for y in range(self.n + 1):
             self.yz_rays += [[]]
             if(self.available_threads.value >= 1):
                 processes.append(
-                    Process(target=self.sub_generate_yz_rays, args=(y, q))
+                    Process(target=self.sub_generate_yz_rays, args=(y, queue))
                     )
                 processes[-1].start()
                 self.available_threads.value -= 1
             else:
                 # print("joining yz")
                 while True:
+                    self.process_queue(queue, self.yz_rays)
                     if (processes[0].is_alive() is not True):
                         processes[0].join(timeout=1)
                         break
                 processes.pop(0)
                 self.available_threads.value += 1
-                val = q.get()
-                self.yz_rays[val[0]] += val[1]
                 processes.append(
-                    Process(target=self.sub_generate_yz_rays, args=(y, q))
+                    Process(target=self.sub_generate_yz_rays, args=(y, queue))
                     )
                 processes[-1].start()
                 self.available_threads.value -= 1
@@ -169,14 +167,13 @@ class Cubes:
         for p in processes:
             # print("joining yz2")
             while True:
+                self.process_queue(queue, self.yz_rays)
                 if (p.is_alive() is not True):
                     p.join(timeout=1)
                     break
             p.join()
             self.available_threads.value += 1
-            val = q.get()
-            self.yz_rays[val[0]] += val[1]
-        # print("")
+        self.process_queue(queue, self.yz_rays)
 
     def check_bounds(self, verts, isec):
         min_v = verts[0]
@@ -552,7 +549,7 @@ if __name__ == "__main__":
     bf = box_faces
     m = MeshObject(vertexes=bv, indices=bf)
     m.set_rotation((0, -np.radians(45), np.radians(45)))
-    n = 100
+    n = 1000
     cubes = Cubes(n)
     # exit(1)
     cubes.center_mesh(m)
