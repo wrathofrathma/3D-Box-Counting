@@ -23,11 +23,14 @@ class Cubes:
         self.max_t = cpu_count()  # total threads
         self.available_threads = Value('i', self.max_t)  # current thread count
         print("Detected " + str(self.max_t) + " threads")
+        print("Generating %d rays on %d threads." % (3 * (n + 1) ** 2, self.max_t))
         self.generate_xy_rays()
+        # exit(1)
         self.generate_xz_rays()
         self.generate_yz_rays()
 
     def sub_generate_xy_rays(self, x, queue):
+        # print(x)
         rays = []
         for y in range(self.n + 1):
             rays += [
@@ -38,10 +41,11 @@ class Cubes:
         queue.put((x, rays))
 
     def generate_xy_rays(self):
-        print("Generating xy")
+        # print("Generating xy")
         # n+1 because 2 boxes |_|_| would have 3 xy rays on each level.
         q = Queue()
         processes = []
+        print(self.n)
         for x in range(self.n + 1):
             self.xy_rays += [[]]
             if(self.available_threads.value >= 1):
@@ -51,24 +55,31 @@ class Cubes:
                 processes[-1].start()
                 self.available_threads.value -= 1
             else:
-                print("Joining xy")
+                # print("Joining xy")
                 while True:
                     if (processes[0].is_alive() is not True):
                         processes[0].join(timeout=1)
                         break
                 processes.pop(0)
                 self.available_threads.value += 1
-                self.xy_rays[x] += q.get()[1]
+                val = q.get()
+                self.xy_rays[val[0]] += val[1]
+                processes.append(
+                    Process(target=self.sub_generate_xy_rays, args=(x, q))
+                    )
+                processes[-1].start()
+                self.available_threads.value -= 1
+
         for p in processes:
-            print("joining xy 2")
+            # print("joining xy 2")
             while True:
                 if (p.is_alive() is not True):
                     p.join(timeout=1)
                     break
             self.available_threads.value += 1
-            (x, rays) = q.get()
-            self.xy_rays[x] += rays
-        print("")
+            val = q.get()
+            self.xy_rays[val[0]] += val[1]
+        # print("")
           
     def sub_generate_xz_rays(self, x, queue):
         rays = []
@@ -81,7 +92,7 @@ class Cubes:
         queue.put((x, rays))
 
     def generate_xz_rays(self):
-        print("Generating xz")
+        # print("Generating xz")
         q = Queue()
         processes = []
         for x in range(self.n + 1):
@@ -93,24 +104,30 @@ class Cubes:
                 processes[-1].start()
                 self.available_threads.value -= 1
             else:
-                print("joining xz")
+                # print("joining xz")
                 while True:
                     if (processes[0].is_alive() is not True):
                         processes[0].join(timeout=1)
                         break
                 processes.pop(0)
                 self.available_threads.value += 1
-                self.xz_rays[x] += q.get()[1]
+                val = q.get()
+                self.xz_rays[val[0]] += val[1]
+                processes.append(
+                    Process(target=self.sub_generate_xz_rays, args=(x, q))
+                    )
+                processes[-1].start()
+                self.available_threads.value -= 1
         for p in processes:
-            print("joining xz2")
+            # print("joining xz2")
             while True:
                 if (p.is_alive() is not True):
                     p.join(timeout=1)
                     break
             self.available_threads.value += 1
-            (x, rays) = q.get()
-            self.xz_rays[x] += rays
-        print("")
+            val = q.get()
+            self.xz_rays[val[0]] += val[1]
+        # print("")
 
     def sub_generate_yz_rays(self, y, queue):
         rays = []
@@ -123,7 +140,7 @@ class Cubes:
         queue.put((y, rays))
 
     def generate_yz_rays(self):
-        print("Generating yz")
+        # print("Generating yz")
         q = Queue()
         processes = []
         for y in range(self.n + 1):
@@ -135,26 +152,32 @@ class Cubes:
                 processes[-1].start()
                 self.available_threads.value -= 1
             else:
-                print("joining yz")
+                # print("joining yz")
                 while True:
                     if (processes[0].is_alive() is not True):
                         processes[0].join(timeout=1)
                         break
                 processes.pop(0)
                 self.available_threads.value += 1
-                self.yz_rays[y] += q.get()[1]
+                val = q.get()
+                self.yz_rays[val[0]] += val[1]
+                processes.append(
+                    Process(target=self.sub_generate_yz_rays, args=(y, q))
+                    )
+                processes[-1].start()
+                self.available_threads.value -= 1
+
         for p in processes:
-            print("joining yz2")
+            # print("joining yz2")
             while True:
-                print("Trying to join")
                 if (p.is_alive() is not True):
                     p.join(timeout=1)
                     break
             p.join()
             self.available_threads.value += 1
-            (y, rays) = q.get()
-            self.yz_rays[y] += rays
-        print("")
+            val = q.get()
+            self.yz_rays[val[0]] += val[1]
+        # print("")
 
     def check_bounds(self, verts, isec):
         min_v = verts[0]
@@ -240,6 +263,10 @@ class Cubes:
         for x in range(self.n):
             for y in range(self.n):
                 if np.min(self.cubes[x, y, :]) == 0.0:
+                    # print("x: %d y: %d", (x, y))
+                    # print("Lens: %d %d" % (len(self.xy_rays), len(self.xy_rays[x])))
+                    # print("Lens: %d %d" % (len(self.xy_rays), len(self.xy_rays[x + 1])))
+                    # print(self.xy_rays[0])
                     bl = geometric_tests.ray_intersect_plane(self.xy_rays[x][y], p)
                     br = geometric_tests.ray_intersect_plane(self.xy_rays[x + 1][y], p)
                     tl = geometric_tests.ray_intersect_plane(self.xy_rays[x][y + 1], p)
@@ -367,6 +394,7 @@ class Cubes:
         plt.show()
 
     def intersect_mesh(self, mesh):
+        print("Generating intersections")
         verts = mesh.get_vertices()
         faces = mesh.get_faces()
         icount = 0
@@ -422,7 +450,7 @@ if __name__ == "__main__":
     m.set_rotation((0, -np.radians(45), np.radians(45)))
     n = 100
     cubes = Cubes(n)
-    exit(1)
+    # exit(1)
     cubes.center_mesh(m)
     mesh_verts = m.get_vertices()
     mesh_faces = m.get_faces()
