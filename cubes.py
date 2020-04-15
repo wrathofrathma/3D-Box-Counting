@@ -439,14 +439,21 @@ class Cubes:
 
         # Create partitions
         partitions = [faces[i: i + part_size] for i in range(0, n_faces, part_size)]
+        # Overflow partition calc
         if(len(partitions) > n_max_threads):
+          print("Overflow detected")
           new_parts = partitions[:n_max_threads]
           # Stick overflow on the last index. We could spread it, but fuck it.
-          if(len(partitions[n_max_threads]) > 1):
-            overflow = np.append(*partitions[n_max_threads:])
+          if(len(partitions[n_max_threads:]) > 1):
+            print("Overflow case 1")
+            # Let's just nest this list comprehension and pretend it's not a double nested for loop
+            overflow = np.array([p for p in [ z for z in partitions[n_max_threads:]]])
+
+            overflow = overflow.reshape(overflow.shape[0],overflow.shape[2])
           else:
             overflow = partitions[-1]
-          new_parts[-1] = np.append(new_parts[-1], overflow)
+
+          new_parts[-1] = np.append(new_parts[-1], overflow,axis=0)
           partitions = new_parts
         print("Created %d partitions of %d avg size" % (len(partitions), part_size))
 
@@ -483,20 +490,20 @@ class Cubes:
     def get_grid_scale(self):
         return float(self.n)
 
-    def center_mesh(self, mesh):
-        verts = mesh.get_vertices()
-        xmax = np.max(verts[:, 0])
-        ymax = np.max(verts[:, 1])
-        zmax = np.max(verts[:, 2])
-        xmin = np.min(verts[:, 0])
-        ymin = np.min(verts[:, 1])
-        zmin = np.min(verts[:, 2])
-        xdiff = abs(xmax - xmin)
-        ydiff = abs(ymax - ymin)
-        zdiff = abs(zmax - zmin)
-        scale = max(xdiff, ydiff, zdiff)
-        scale = self.n / scale
-        scale = np.array([scale, scale, scale])
-        mesh.set_scale(scale)
-        center = (self.n / 2.0, self.n / 2.0, self.n / 2.0)
-        mesh.set_position(center)
+    # def center_mesh(self, mesh):
+    #     verts = mesh.get_vertices()
+    #     xmax = np.max(verts[:, 0])
+    #     ymax = np.max(verts[:, 1])
+    #     zmax = np.max(verts[:, 2])
+    #     xmin = np.min(verts[:, 0])
+    #     ymin = np.min(verts[:, 1])
+    #     zmin = np.min(verts[:, 2])
+    #     xdiff = abs(xmax - xmin)
+    #     ydiff = abs(ymax - ymin)
+    #     zdiff = abs(zmax - zmin)
+    #     scale = max(xdiff, ydiff, zdiff)
+    #     scale = self.n / scale
+    #     scale = np.array([scale, scale, scale])
+    #     mesh.set_scale(scale)
+    #     center = (self.n / 2.0, self.n / 2.0, self.n / 2.0)
+    #     mesh.set_position(center)
