@@ -2,7 +2,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection
 from pyrr import line, ray, geometric_tests, plane
-from mesh import MeshObject
 from math import radians
 from multiprocessing import Process, Lock, cpu_count, Array, Value, Queue, connection, Pool
 import math
