@@ -6,11 +6,11 @@ from copy import deepcopy
 import numpy as np
 import pywavefront as pwf
 
-from cubes import Cubes
+from lsystem.boxcounting3d.cubes import Cubes
 
 # This entire setup assumes that we're working with the MeshObject used in the L'System Visualizer project
 
-def calc_fractal_dim(n: int, mesh):
+def calc_fractal_dim3D(n: int, mesh):
   """Calculates the fractal dimensions for nxnxn cubes around the given mesh"""
   side_length = 1.0 / n  # We normalize the mesh, so the side length is important here.
   cmesh = deepcopy(mesh) # Making deep copies to make sure the mesh functions appropriately on multiple runs
