@@ -4,13 +4,29 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection
 from pyrr import line, ray, geometric_tests, plane
 from mesh import MeshObject
 from math import radians
-from multiprocessing import Process, Lock, cpu_count, Array, Value, Queue
+from multiprocessing import Process, Lock, cpu_count, Array, Value, Queue, connection, Pool
 import math
 import ctypes as c
 
 
 class Cubes:
+    """This is a utility class to create a grid of cubes around a 3D mesh for the purposes of calculating the fractal dimension.
+    Attributes:
+        n (int): number of sides on each face.
+        r (float): Controls the radius of the cubes. Don't touch this.
+        cube_array (array): Shared memory array for multiprocessing.
+        cubes (array): Array of cubes tracking whether we've intersected them.
+        xy_rays (array): Array of vectors used for raycasting the mesh vertices into faces of the cubes.
+        xz_rays (array): Array of vectors used for raycasting the mesh vertices into faces of the cubes.
+        yz_rays (array): Array of vectors used for raycasting the mesh vertices into faces of the cubes.
+        max_t (int): Maximum number of supported threads on the system.
+        available_threads: Current number of available threads.
+    """
     def __init__(self, n):
+        """Constructor for the Cubes class.
+        Parameters:
+            n (int): Number of faces on each side of the cubic grid.
+        """
         self.n = n
         self.r = 0.5
         self.cube_array = Array(c.c_double, n * n * n)
@@ -20,17 +36,35 @@ class Cubes:
         self.xy_rays = []
         self.xz_rays = []
         self.yz_rays = []
-        self.max_t = cpu_count()  # total threads
+        # self.max_t = cpu_count()  # total threads
+        self.max_t = 24
         self.available_threads = Value('i', self.max_t)  # current thread count
         print("Detected " + str(self.max_t) + " threads")
         print("Generating %d rays on %d threads." % (3 * (n + 1) ** 2, self.max_t))
         self.generate_xy_rays()
-        # exit(1)
         self.generate_xz_rays()
         self.generate_yz_rays()
 
+    def process_queue(self, queue, rays):
+        while(not queue.empty()):
+            val = queue.get()
+            rays[val[0]] += val[1]
+
+
+    def sub_generate_xz_rays(self, x, queue):
+        """Subprocess for generating xz rays."""
+        rays = []
+        for z in range(self.n + 1):
+            rays += [
+                ray.create_from_line(
+                    line.create_from_points((x, 0, z), (x, self.n, z))
+                )
+            ]
+        queue.put((x, rays))
+        queue.close()
+
     def sub_generate_xy_rays(self, x, queue):
-        # print(x)
+        """Subprocess for generating xy rays."""
         rays = []
         for y in range(self.n + 1):
             rays += [
@@ -40,12 +74,21 @@ class Cubes:
             ]
         queue.put((x, rays))
         queue.close()
-    def process_queue(self, queue, rays):
-        while(not queue.empty()):
-            val = queue.get()
-            rays[val[0]] += val[1]
+
+    def sub_generate_yz_rays(self, y, queue):
+        """Subprocess for generating yz rays."""
+        rays = []
+        for z in range(self.n + 1):
+            rays += [
+                ray.create_from_line(
+                    line.create_from_points((0, y, z), (self.n, y, z))
+                )
+            ]
+        queue.put((y, rays))
+        queue.close()
 
     def generate_xy_rays(self):
+        """Populates the xy_rays array with raycasting vectors on the xy plane from 0 to n"""
         print("Generating xy")
         queue = Queue()
         processes = []
@@ -79,19 +122,9 @@ class Cubes:
                     break
             self.available_threads.value += 1
         self.process_queue(queue, self.xy_rays)
-          
-    def sub_generate_xz_rays(self, x, queue):
-        rays = []
-        for z in range(self.n + 1):
-            rays += [
-                ray.create_from_line(
-                    line.create_from_points((x, 0, z), (x, self.n, z))
-                )
-            ]
-        queue.put((x, rays))
-        queue.close()
 
     def generate_xz_rays(self):
+        """Populates the xz_rays array with raycasting vectors on the xz plane from 0 to n"""
         print("Generating xz")
         queue = Queue()
         processes = []
@@ -117,7 +150,6 @@ class Cubes:
                 processes[-1].start()
                 self.available_threads.value -= 1
         for p in processes:
-            # print("joining xz2")
             while True:
                 self.process_queue(queue, self.xz_rays)
                 if (p.is_alive() is not True):
@@ -126,18 +158,9 @@ class Cubes:
             self.available_threads.value += 1
         self.process_queue(queue, self.xz_rays)
 
-    def sub_generate_yz_rays(self, y, queue):
-        rays = []
-        for z in range(self.n + 1):
-            rays += [
-                ray.create_from_line(
-                    line.create_from_points((0, y, z), (self.n, y, z))
-                )
-            ]
-        queue.put((y, rays))
-        queue.close()
 
     def generate_yz_rays(self):
+        """Populates the yz_rays array with raycasting vectors on the yz plane from 0 to n"""
         print("Generating yz")
         queue = Queue()
         processes = []
@@ -150,7 +173,6 @@ class Cubes:
                 processes[-1].start()
                 self.available_threads.value -= 1
             else:
-                # print("joining yz")
                 while True:
                     self.process_queue(queue, self.yz_rays)
                     if (processes[0].is_alive() is not True):
@@ -165,7 +187,6 @@ class Cubes:
                 self.available_threads.value -= 1
 
         for p in processes:
-            # print("joining yz2")
             while True:
                 self.process_queue(queue, self.yz_rays)
                 if (p.is_alive() is not True):
@@ -176,6 +197,7 @@ class Cubes:
         self.process_queue(queue, self.yz_rays)
 
     def check_bounds(self, verts, isec):
+        """Validates the bounds of the intersection with the min/max values of the min/max values of the mesh."""
         min_v = verts[0]
         max_v = verts[1]
         isec = np.array(isec)
@@ -185,6 +207,7 @@ class Cubes:
         return x & y & z
 
     def check_intersection_xy(self, isec, xy, verts):
+        """Checks for intersections of a specifiy ray on the xy plane for the mesh"""
         if isec is not None:
             x = xy[0]
             y = xy[1]
@@ -196,6 +219,7 @@ class Cubes:
         return 0
 
     def check_intersection_xz(self, isec, xz, verts):
+        """Checks for intersections of a specifiy ray on the xz plane for the mesh"""
         if isec is not None:
             x = xz[0]
             z = xz[1]
@@ -207,6 +231,7 @@ class Cubes:
         return 0
 
     def check_intersection_yz(self, isec, yz, verts):
+        """Checks for intersections of a specifiy ray on the yz plane for the mesh"""
         if isec is not None:
             y = yz[0]
             z = yz[1]
@@ -217,7 +242,8 @@ class Cubes:
                         return 1
         return 0
 
-    def sub_intersect_xz(self, x, inters, p, min_verts, max_verts, mutex):
+    def sub_intersect_xz(self, x, p, min_verts, max_verts):
+        """Subprocess for calculating intersections on the xz plane."""
         i = 0
         for z in range(self.n):
             if np.min(self.cubes[x, :, z]) == 0.0:
@@ -239,52 +265,20 @@ class Cubes:
                 i += self.check_intersection_xz(
                     tr, (x, z), (min_verts, max_verts)
                 )
-        mutex.acquire()
-        inters.value += i
-        mutex.release()
+        return i
 
     def intersect_xz(self, verts):
         """This method checks for intersections with the xz vectors. It marks the cubes as intersected and returns the number of intersections."""
         p = plane.create_from_points(verts[0], verts[1], verts[2])
         max_verts = (np.max(verts[:, 0]), np.max(verts[:, 1]), np.max(verts[:, 2]))
         min_verts = (np.min(verts[:, 0]), np.min(verts[:, 1]), np.min(verts[:, 2]))
-        # For each cube on the xz face, if there exists a cube not intersected
-        # on the y depth, then check intersections on that xz
-        inters = Value('d', 0)
-        processes = []
-        mutex = Lock()
+        inters = 0
         for x in range(self.n):
-            if(self.available_threads.value >= 1):
-                # Spawnthread
-                self.available_threads.value -= 1
-                processes.append(
-                    Process(target=self.sub_intersect_xz,
-                      args=(x, inters, p, min_verts, max_verts, mutex)
-                    )
-                )
-                processes[-1].start()
-            else: 
-                # Wait thread
-                while True:
-                    if (processes[0].is_alive() is not True):
-                        processes[0].join()
-                        break
-                self.available_threads.value += 1
-                processes.pop(0)
-                processes.append(Process(target=self.sub_intersect_xz, args=(x, inters, p, min_verts, max_verts, mutex)))
-                processes[-1].start()
-                self.available_threads.value -= 1
-        
-        # cleanup
-        for process in processes:
-            while True:
-                if (process.is_alive() is not True):
-                    process.join()
-                    break
-            self.available_threads.value += 1
-        return inters.value
+          inters += self.sub_intersect_xz(x, p, min_verts, max_verts)
+        return inters
 
-    def sub_intersect_xy(self, x, inters, p, min_verts, max_verts, mutex):
+    def sub_intersect_xy(self, x, p, min_verts, max_verts):
+        """Subprocess for calculating intersections on the xy plane."""
         i = 0
         for y in range(self.n):
             if np.min(self.cubes[x, y, :]) == 0.0:
@@ -306,9 +300,7 @@ class Cubes:
                 i += self.check_intersection_xy(
                     tr, (x, y), (min_verts, max_verts)
                 )
-        mutex.acquire()
-        inters.value += i
-        mutex.release()
+        return i
 
 
     def intersect_xy(self, verts):
@@ -316,43 +308,12 @@ class Cubes:
         p = plane.create_from_points(verts[0], verts[1], verts[2])
         max_verts = (np.max(verts[:, 0]), np.max(verts[:, 1]), np.max(verts[:, 2]))
         min_verts = (np.min(verts[:, 0]), np.min(verts[:, 1]), np.min(verts[:, 2]))
-        # For each cube on the xz face, if there exists a cube not intersected
-        # on the y depth, then check intersections on that xz
-        inters = Value('d', 0)
-        processes = []
-        mutex = Lock()
+        inters = 0
         for x in range(self.n):
-            if(self.available_threads.value >= 1):
-                # Spawnthread
-                self.available_threads.value -= 1
-                processes.append(
-                    Process(target=self.sub_intersect_xy,
-                      args=(x, inters, p, min_verts, max_verts, mutex)
-                    )
-                )
-                processes[-1].start()
-            else: 
-                # Wait thread
-                while True:
-                    if (processes[0].is_alive() is not True):
-                        processes[0].join()
-                        break
-                self.available_threads.value += 1
-                processes.pop(0)
-                processes.append(Process(target=self.sub_intersect_xy, args=(x, inters, p, min_verts, max_verts, mutex)))
-                processes[-1].start()
-                self.available_threads.value -= 1
-        
-        # cleanup
-        for process in processes:
-            while True:
-                if (process.is_alive() is not True):
-                    process.join()
-                    break
-            self.available_threads.value += 1
-        return inters.value
+          inters += self.sub_intersect_xy(x, p, min_verts, max_verts)
+        return inters
 
-    def sub_intersect_yz(self, y, inters, p, min_verts, max_verts, mutex):
+    def sub_intersect_yz(self, y, p, min_verts, max_verts):
         i = 0
         for z in range(self.n):
             if np.min(self.cubes[:, y, z]) == 0.0:
@@ -374,48 +335,17 @@ class Cubes:
                 i += self.check_intersection_yz(
                     tr, (y, z), (min_verts, max_verts)
                 )
-        mutex.acquire()
-        inters.value += i
-        mutex.release()
+        return i
 
     def intersect_yz(self, verts):
         """This method checks for intersections with the yz vectors. It marks the cubes as intersected and returns the number of intersections."""
         p = plane.create_from_points(verts[0], verts[1], verts[2])
         max_verts = (np.max(verts[:, 0]), np.max(verts[:, 1]), np.max(verts[:, 2]))
         min_verts = (np.min(verts[:, 0]), np.min(verts[:, 1]), np.min(verts[:, 2]))
-        inters = Value('d', 0)
-        mutex = Lock()
-        processes = []
+        inters = 0
         for y in range(self.n):
-            if(self.available_threads.value >= 1):
-                # Spawnthread
-                self.available_threads.value -= 1
-                processes.append(
-                    Process(target=self.sub_intersect_yz,
-                      args=(y, inters, p, min_verts, max_verts, mutex)
-                    )
-                )
-                processes[-1].start()
-            else: 
-                # Wait thread
-                while True:
-                    if (processes[0].is_alive() is not True):
-                        processes[0].join()
-                        break
-                self.available_threads.value += 1
-                processes.pop(0)
-                processes.append(Process(target=self.sub_intersect_yz, args=(y, inters, p, min_verts, max_verts, mutex)))
-                processes[-1].start()
-                self.available_threads.value -= 1
-        
-        # cleanup
-        for process in processes:
-            while True:
-                if (process.is_alive() is not True):
-                    process.join()
-                    break
-            self.available_threads.value += 1
-        return inters.value
+          inters += self.sub_intersect_yz(y, p, min_verts, max_verts)
+        return inters
 
     def generate_grid(self):
         """Generates cubes to be drawn in pyplot"""
@@ -498,11 +428,51 @@ class Cubes:
         print("Generating intersections")
         verts = mesh.get_vertices()
         faces = mesh.get_faces()
-        icount = 0
-        for face in faces:
-            v = np.array([verts[face[0]], verts[face[1]], verts[face[2]]])
-            icount += self.intersect_face(v)
-        return icount
+        mutex = Lock()
+        # Face based partitioning
+        # We'll apply a face based partitioning scheme and add in logic for if (n_faces < max_threads), then we'll let faces generate more to fill it out.
+        
+        # First, we calculate our partition_size based on the n_max_threads & n_faces
+        n_faces = len(faces)
+        n_max_threads = self.max_t  # Just for visual clarity we'll rename it locally.
+        part_size = math.floor(n_faces / n_max_threads)
+        part_size = max(part_size, 1) # if n_max_threads > n_faces, part_size would be < 1.
+
+        # Create partitions
+        partitions = [faces[i: i + part_size] for i in range(0, n_faces, part_size)]
+        if(len(partitions) > n_max_threads):
+          new_parts = partitions[:n_max_threads]
+          # Stick overflow on the last index. We could spread it, but fuck it.
+          if(len(partitions[n_max_threads]) > 1):
+            overflow = np.append(*partitions[n_max_threads:])
+          else:
+            overflow = partitions[-1]
+          new_parts[-1] = np.append(new_parts[-1], overflow)
+          partitions = new_parts
+        print("Created %d partitions of %d avg size" % (len(partitions), part_size))
+
+        icount = Value('d', 0)
+        # Create processes
+
+        processes = []
+        for partition in partitions:
+          processes.append(Process(target=self.intersect_partition, args=(verts, partition, icount, mutex)))
+          processes[-1].start()
+        # Wait for all
+        for p in processes:
+          p.join()
+        # connection.wait(p.sentinel for p in processes)
+        return icount.value
+
+    def intersect_partition(self, verts, part, count, mutex):
+      """Threaded portion of the mesh intersection"""
+      icount = 0
+      for face in part:
+        v = np.array([verts[face[0]], verts[face[1]], verts[face[2]]])
+        icount += self.intersect_face(v)
+      mutex.acquire()
+      count.value += icount
+      mutex.release()
 
     def intersect_face(self, verts):
         icount = 0
@@ -531,35 +501,3 @@ class Cubes:
         mesh.set_scale(scale)
         center = (self.n / 2.0, self.n / 2.0, self.n / 2.0)
         mesh.set_position(center)
-
-
-if __name__ == "__main__":
-    v = 0.3
-    box_verts = np.array(
-        [
-            np.array([-v, -v, 0.0]),
-            np.array([v, -v, 0.0]),
-            np.array([v, v, 0.0]),
-            np.array([-v, v, 0.0]),
-        ]
-    )
-    bv = box_verts
-    np.seterr(all="raise")
-    box_faces = np.array([[0, 1, 2], [2, 3, 0]])
-    bf = box_faces
-    m = MeshObject(vertexes=bv, indices=bf)
-    m.set_rotation((0, -np.radians(45), np.radians(45)))
-    n = 1000
-    cubes = Cubes(n)
-    # exit(1)
-    cubes.center_mesh(m)
-    mesh_verts = m.get_vertices()
-    mesh_faces = m.get_faces()
-    c = cubes.intersect_mesh(m)
-    print("N-cubes: " + str(n ** 3))
-    print("Print number of intersections: " + str(c))
-    sl = 1.0 / n
-    print("Side length: " + str(sl))
-    dim = math.log(c) / math.log(1 / sl)
-    print("Fractal dimension: " + str(dim))
-    # cubes.draw(mesh_verts, mesh_faces)
