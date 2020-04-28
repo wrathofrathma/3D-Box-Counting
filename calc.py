@@ -33,7 +33,7 @@ def calc_fractal_dim3D(mesh):
   # Min sidelength should be a function of 1/delta * diameter.
   # 0.1
   min_side = 1 / delta * 2 * radius
-  max_n = int(1 / min_side)
+  max_n = min(int(1 / min_side), 2**4)
 
 # [(1, -1), (2, 3.0), (3, -1), (4, 2.0), (5, 1.7958889470453636), (6, 1.7737056144690833), (7, 1.8270874753469162),
 # (8, 1.6666666666666667), (9, 1.9886214170079384), (10, 1.9344984512435675), (11, 1.8991141703557868), (12, 2.0),
@@ -44,13 +44,16 @@ def calc_fractal_dim3D(mesh):
   print("Min sidelength %f" % min_side)
   print("Max detected n: %f" % max_n)
   dims = []
-  with open("somefile.db","w+") as f:
-    for n in range(2, min(max_n+1,30)):
+  with open("results.txt","w+") as f:
+    n = 2
+    while(n<=max_n):
       dmesh = deepcopy(mesh)
       line = "n: {:d} s: {:f} | dim: {:f}".format(n, 1.0/n, calc_fractal_dim(n, dmesh, deltas))
       f.write(line)
+      n*=2
 
- 
+    for n in range(2, min(max_n+1,30)):
+      dmesh = deepcopy(mesh)
   return 0
 
 def get_deltas(mesh):
