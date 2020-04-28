@@ -441,15 +441,12 @@ class Cubes:
         partitions = [faces[i: i + part_size] for i in range(0, n_faces, part_size)]
         # Overflow partition calc
         if(len(partitions) > n_max_threads):
-          print("Overflow detected")
           new_parts = partitions[:n_max_threads]
           # Stick overflow on the last index. We could spread it, but fuck it.
           if(len(partitions[n_max_threads:]) > 1):
-            print("Overflow case 1")
             # Let's just nest this list comprehension and pretend it's not a double nested for loop
             overflow = np.array([p for p in [ z for z in partitions[n_max_threads:]]])
-
-            overflow = overflow.reshape(overflow.shape[0],overflow.shape[2])
+            overflow = overflow.reshape(overflow.shape[0]*overflow.shape[1],overflow.shape[2])
           else:
             overflow = partitions[-1]
 
