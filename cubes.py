@@ -8,6 +8,7 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 from numba import jit, njit, prange
 from numba.typed import List
 from lsystem.graphics.mesh import MeshObject
+from uuid import uuid4
 
 
 ###########
@@ -182,7 +183,8 @@ def generate_grid(n: int, cubes):
 
     return (cube_verts, cube_faces, colors)
 
-def draw(n, cubes, mesh_verts, mesh_faces):
+
+def save(n, cubes, mesh_verts, mesh_faces):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
     r = [-n, n]
@@ -226,7 +228,9 @@ def draw(n, cubes, mesh_verts, mesh_faces):
     ax.set_zlim3d(0, n + 1)
     plt.xlabel("x")
     plt.ylabel("y")
-    plt.show()
+    # plt.show()
+    fname = "boxcount-" + str(uuid4()) + ".png"
+    plt.savefig(fname)
 
 @njit
 def get_cs(n, isec, ray):
@@ -297,7 +301,7 @@ def generate_rays(verts, faces):
         rays+=[(p2,p3)]
     return rays
 
-def intersect_mesh(mesh: MeshObject, n):
+def intersect_mesh(mesh: MeshObject, n, save_plot: bool=False):
     # Cube intersection tracker
     cubes = np.zeros(shape=(n,n,n), dtype=np.int)
     # Planes to define the cubes
@@ -306,12 +310,11 @@ def intersect_mesh(mesh: MeshObject, n):
     # Get relevant mesh data
     verts = mesh.get_vertices()
     faces = mesh.get_faces()
+
     rays = List(generate_rays(verts, faces))
-    print("Intersecting %d rays" % len(rays))
+    intersections = pintersect(cubes, verts, rays, xy, xz, yz, n)
 
-    icount = pintersect(cubes, verts, rays, xy, xz, yz, n)
+    if(save_plot):
+        save(n, cubes, verts, faces)
 
-    # if(n==32):
-    #     draw(n, cubes, verts, faces)
-
-    return icount
+    return intersections
